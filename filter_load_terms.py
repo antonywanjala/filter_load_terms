@@ -10,18 +10,14 @@ from tqdm import tqdm
 def load_scoring_terms(csv_path):
     """Loads terms and points from the provided CSV."""
     try:
-        # Read the CSV using pandas
         df = pd.read_csv(csv_path)
 
-        # Expected column names based on your prompt
         term_col = 'Term and/or Phrase'
         points_col = 'Points Associated with Term and/or Phrase'
 
         if term_col not in df.columns or points_col not in df.columns:
             raise ValueError(f"CSV must contain the columns: '{term_col}' and '{points_col}'")
 
-        # Convert to a dictionary: {term: points}
-        # Drop any rows with missing terms or points, and ensure points are numeric
         df = df.dropna(subset=[term_col, points_col])
         df[points_col] = pd.to_numeric(df[points_col], errors='coerce').fillna(0)
 
@@ -38,7 +34,6 @@ def score_text(text, terms_dict):
     total_score = 0.0
 
     for term, points in terms_dict.items():
-        # Use regex to find whole word/phrase matches, ignoring case
         pattern = r'\b' + re.escape(term) + r'\b'
         matches = len(re.findall(pattern, text, flags=re.IGNORECASE))
 
@@ -51,7 +46,6 @@ def score_text(text, terms_dict):
 
 def split_into_statements(text):
     """Splits text into independent statements using common punctuation."""
-    # Split by period, exclamation, or question mark followed by a space
     statements = re.split(r'(?<=[.!?])\s+', text)
     return [stmt.strip() for stmt in statements if stmt.strip()]
 
@@ -87,17 +81,14 @@ def main():
     results = []
 
     # 4. Process files with a single tqdm loading bar
-    # We pass the file name to the progress bar description for clarity on what is happening
     with tqdm(total=len(txt_files), desc="Processing Files", unit="file") as pbar:
         for file_path in txt_files:
             pbar.set_description(f"Processing: {file_path.name[:20]}...")
             try:
-                # Attempt to read the file (handling standard encodings)
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
             except UnicodeDecodeError:
                 try:
-                    # Fallback for Windows encoding
                     with open(file_path, 'r', encoding='cp1252') as f:
                         content = f.read()
                 except Exception as e:
@@ -109,22 +100,19 @@ def main():
                 pbar.update(1)
                 continue
 
-            # Score the entire document
             doc_score, doc_freq = score_text(content, terms_dict)
 
-            # Score at the statement level
             statements = split_into_statements(content)
             statement_scores = []
             for stmt in statements:
                 stmt_score, stmt_freq = score_text(stmt, terms_dict)
                 if stmt_score > 0:
                     statement_scores.append({
-                        "statement": stmt[:50] + "..." if len(stmt) > 50 else stmt,  # Truncate for cleaner output
+                        "statement": stmt[:50] + "..." if len(stmt) > 50 else stmt,
                         "score": stmt_score,
                         "frequencies": stmt_freq
                     })
 
-            # Format frequencies as a readable string for the CSV
             freq_str = "; ".join([f"{k} ({v})" for k, v in doc_freq.items()])
 
             results.append({
@@ -152,5 +140,13 @@ def main():
         print(f"Some files could not be read. See {error_log} for details.")
 
 
+# --- THE FIX IS HERE ---
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # If the script crashes, it will print the exact reason here instead of vanishing.
+        print(f"\nCRITICAL ERROR: {e}")
+    finally:
+        # This absolutely forces the window to stay open until you acknowledge it.
+        input("\nPress Enter to exit...")
