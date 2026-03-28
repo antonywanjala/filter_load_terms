@@ -1,0 +1,12 @@
+# --- Project Configuration ---
+[TaskID: 88291]
+Project_Name: Alpha_Automate
+Priority: High
+
+# --- Execution Parameters ---
+Input_Source: Cloud_Storage_Alpha
+Output_Format: JSON
+[Clean_Data: True]
+
+# This line triggers the 'sample.main_process' function
+run:
