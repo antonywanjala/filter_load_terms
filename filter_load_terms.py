@@ -1,7 +1,7 @@
 import os
-import re
 import csv
 import time
+import string
 from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
@@ -29,13 +29,28 @@ def load_scoring_terms(csv_path):
 
 
 def score_text(text, terms_dict):
-    """Scores a given block of text based on term frequency."""
+    """Scores a block of text using string methods instead of regex."""
     term_frequencies = {}
     total_score = 0.0
 
+    # Normalize text for counting
+    lower_text = text.lower()
+
+    # To mimic \b (word boundaries), we can strip punctuation
+    # and split into a list of words for exact matching
+    words = lower_text.translate(str.maketrans('', '', string.punctuation)).split()
+
     for term, points in terms_dict.items():
-        pattern = r'\b' + re.escape(term) + r'\b'
-        matches = len(re.findall(pattern, text, flags=re.IGNORECASE))
+        term_lower = term.lower()
+
+        # Logic: If term is a single word, count in words list.
+        # If it's a phrase, count occurrences in the full string.
+        if ' ' in term_lower:
+            # Simple manual count for phrases
+            matches = lower_text.count(term_lower)
+        else:
+            # Exact word matching for single terms
+            matches = words.count(term_lower)
 
         if matches > 0:
             term_frequencies[term] = matches
@@ -45,16 +60,19 @@ def score_text(text, terms_dict):
 
 
 def split_into_statements(text):
-    """Splits text into independent statements using common punctuation."""
-    statements = re.split(r'(?<=[.!?])\s+', text)
-    return [stmt.strip() for stmt in statements if stmt.strip()]
+    """Splits text into statements using string splitting instead of re.split."""
+    # Replace common sentence enders with a unique delimiter
+    temp_text = text.replace('!', '.').replace('?', '.')
+    parts = temp_text.split('.')
+
+    # Cleaning up whitespace
+    return [p.strip() for p in parts if p.strip()]
 
 
 def main():
     # 1. Get user inputs
     csv_path = input("Enter the absolute path to the scoring CSV file: ").strip().strip('"').strip("'")
-    folder_path = input("Enter the absolute path to the super folder containing .txt files: ").strip().strip('"').strip(
-        "'")
+    folder_path = input("Enter the absolute path to the super folder: ").strip().strip('"').strip("'")
 
     epoch_time = int(time.time())
     output_csv = f"output_results_{epoch_time}.csv"
@@ -66,13 +84,12 @@ def main():
     if not terms_dict:
         return
 
-    # 3. Gather all .txt files recursively
-    print("Scanning directory for .txt files...")
+    # 3. Gather all .txt files
     path_obj = Path(folder_path)
     txt_files = list(path_obj.rglob("*.txt"))
 
     if not txt_files:
-        print("No .txt files found in the specified directory or its subdirectories.")
+        print("No .txt files found.")
         return
 
     print(f"Found {len(txt_files)} files. Beginning analysis...")
@@ -80,35 +97,30 @@ def main():
     unreadable_files = []
     results = []
 
-    # 4. Process files with a single tqdm loading bar
+    # 4. Process files
     with tqdm(total=len(txt_files), desc="Processing Files", unit="file") as pbar:
         for file_path in txt_files:
             pbar.set_description(f"Processing: {file_path.name[:20]}...")
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except UnicodeDecodeError:
+                # Attempt UTF-8 then CP1252
                 try:
-                    with open(file_path, 'r', encoding='cp1252') as f:
-                        content = f.read()
-                except Exception as e:
-                    unreadable_files.append(f"{file_path} - Error: {e}")
-                    pbar.update(1)
-                    continue
+                    content = file_path.read_text(encoding='utf-8')
+                except UnicodeDecodeError:
+                    content = file_path.read_text(encoding='cp1252')
             except Exception as e:
                 unreadable_files.append(f"{file_path} - Error: {e}")
                 pbar.update(1)
                 continue
 
             doc_score, doc_freq = score_text(content, terms_dict)
-
             statements = split_into_statements(content)
+
             statement_scores = []
             for stmt in statements:
                 stmt_score, stmt_freq = score_text(stmt, terms_dict)
                 if stmt_score > 0:
                     statement_scores.append({
-                        "statement": stmt[:50] + "..." if len(stmt) > 50 else stmt,
+                        "statement": (stmt[:50] + "...") if len(stmt) > 50 else stmt,
                         "score": stmt_score,
                         "frequencies": stmt_freq
                     })
@@ -124,29 +136,26 @@ def main():
 
             pbar.update(1)
 
-    # 5. Export successful results to CSV
+    # 5. Export results
     if results:
         pd.DataFrame(results).to_csv(output_csv, index=False)
         print(f"\nSuccess! Results saved to: {output_csv}")
     else:
-        print("\nNo viable data extracted to save.")
+        print("\nNo viable data extracted.")
 
-    # 6. Export unreadable files to supplementary documentation
+    # 6. Export errors
     if unreadable_files:
         with open(error_log, 'w') as f:
-            f.write("The following files could not be read during the script execution:\n\n")
+            f.write("Files that could not be read:\n\n")
             for err in unreadable_files:
                 f.write(f"{err}\n")
-        print(f"Some files could not be read. See {error_log} for details.")
+        print(f"Check {error_log} for unreadable files.")
 
 
-# --- THE FIX IS HERE ---
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        # If the script crashes, it will print the exact reason here instead of vanishing.
         print(f"\nCRITICAL ERROR: {e}")
     finally:
-        # This absolutely forces the window to stay open until you acknowledge it.
         input("\nPress Enter to exit...")
